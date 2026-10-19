@@ -310,11 +310,10 @@ def dump_json(path: Path, data: Any) -> None:
 #     [CRITICAL POINTS DATA]  /  [FILAMENTS DATA]   (opcionales)
 #
 # **Qué es un "filamento" aquí.** En el formato de DisPerSE cada entrada de
-# ``[FILAMENTS]`` es un **arco** entre dos puntos críticos. Con ``mse -upSkl`` (el
-# caso de la tesis) todos los arcos unen un punto silla de índice 2 con un
+# ``[FILAMENTS]`` es un **arco** entre dos puntos críticos. Con ``mse -upSkl``  todos los arcos unen un punto silla de índice 2 con un
 # máximo; un puente físico *máximo–silla–máximo* está formado por **dos** arcos
-# que comparten la silla. Este módulo conserva el arco como unidad (igual que la
-# tesis) y ofrece :func:`assemble_bridges` para la unidad física completa.
+# que comparten la silla. Este módulo conserva el arco como unidad 
+# y ofrece :func:`assemble_bridges` para la unidad física completa.
 
 
 _BBOX_GROUP = re.compile(r"\[([^\]]*)\]")
@@ -358,7 +357,7 @@ class Skeleton:
     def n_arcs(self) -> int:
         return len(self.offsets) - 1
 
-    n_filaments = n_arcs  # alias: "filamento" = arco, como en la tesis
+    n_filaments = n_arcs  # alias: "filamento" = arco-
 
     @property
     def n_critical_points(self) -> int:
@@ -819,13 +818,13 @@ def empirical_extent(skeletons) -> Dict[str, object]:
 # ====================================================================================================
 # MÓDULO: geometry
 # ====================================================================================================
-# Geometría de los filamentos 3D (metodología de la tesis, cap. 3).
+# Geometría de los filamentos 3D.
 #
 # Para un arco con puntos de muestreo ``p_1 … p_N`` (unidades de la simulación):
 #
-# ``length``         L = Σ_{i=1}^{N-1} ‖p_{i+1} − p_i‖                       (definición de la tesis, cap. 3)
-# ``end_to_end``     D = ‖p_N − p_1‖                                         (definición de la tesis, cap. 3)
-# ``curvature_eff``  C_eff = L / D                                           (definición de la tesis, cap. 3)
+# ``length``         L = Σ_{i=1}^{N-1} ‖p_{i+1} − p_i‖                       
+# ``end_to_end``     D = ‖p_N − p_1‖                                         
+# ``curvature_eff``  C_eff = L / D                                           
 #
 # * C_eff ≈ 1: trayectoria casi recta; C_eff > 1: curvada o tortuosa.
 # * **C_eff no está definida si D = 0** (extremos coincidentes, p. ej. un lazo) ni
@@ -838,21 +837,13 @@ def empirical_extent(skeletons) -> Dict[str, object]:
 #
 #     I_ij = (1/N) Σ_n (x_i^(n) − x̄_i)(x_j^(n) − x̄_j)
 #
-# con autovalores ``λ_minor ≤ λ_mid ≤ λ_major``. Siguiendo el código de la tesis:
+# con autovalores ``λ_minor ≤ λ_mid ≤ λ_major``. 
 # ``L_inertia = √λ_major``, grosor ``√λ_minor`` (y ``√λ_mid``), orientación =
 # autovector de ``λ_major``.
 #
 # Orientación: un eje no tiene sentido (``v`` y ``−v`` son lo mismo), así que los
 # vectores se pliegan al hemisferio ``v_z ≥ 0``. Se reportan: ángulo con el eje Z
-# θ_z ∈ [0°, 90°] (el que grafica el código de la tesis, ya sin la ambigüedad de
-# signo), elevación sobre el plano XY = 90° − θ_z (la definición escrita en el
-# texto de la tesis) y azimut φ ∈ [0°, 180°).
-#
-# .. warning::
-#    La tesis no declara qué tensor usa el código 3D (la función
-#    ``tensor_inercia_3D`` no figura en el notebook guardado). Las convenciones
-#    ``covariance_sum`` y ``mechanical_sum`` existen para **auditar** cuál
-#    reproduce las figuras de la tesis; ver :func:`tensor_convention_audit`.
+# θ_z ∈ [0°, 90°], elevación sobre el plano XY = 90° − θ_z  y azimut φ ∈ [0°, 180°).
 
 
 TENSOR_CONVENTIONS = ("covariance_mean", "covariance_sum", "mechanical_sum")
@@ -931,7 +922,7 @@ def resample_polyline(p: np.ndarray, step: float) -> np.ndarray:
 def tensor_eigh(points: np.ndarray, convention: str = "covariance_mean") -> Tuple[np.ndarray, np.ndarray]:
     """Autovalores (ascendentes) y autovectores del tensor según la convención.
 
-    * ``covariance_mean``: ``S/N`` con ``S = Σ c cᵀ`` (tesis, sec. 3.0.4).
+    * ``covariance_mean``: ``S/N`` con ``S = Σ c cᵀ``.
     * ``covariance_sum``: ``S``.
     * ``mechanical_sum``: tensor de inercia mecánico ``tr(S)·1 − S`` (masas
       unitarias). Sus autovalores están invertidos respecto de ``S``: el de mayor
@@ -1038,8 +1029,7 @@ def tensor_convention_audit(skel: Skeleton, conventions: Iterable[str] = TENSOR_
     Para cada una informa la mediana de ``L/L_inertia`` y de ``axis_vs_e2e_deg``
     (ángulo entre el eje principal y el vector extremo-a-extremo). Con la
     convención correcta el eje principal es *paralelo* al filamento (mediana
-    ≪ 45°). Sirve para decidir qué tensor usó el código original comparando con
-    las afirmaciones de la tesis (``L_geom/L_inercia`` → 1 a alta persistencia).
+    ≪ 45°).(``L_geom/L_inercia`` → 1 a alta persistencia).
     """
     rows = []
     for c in conventions:
@@ -1215,7 +1205,7 @@ def validate_skeleton(skel, tol_factor: float = 1e-3) -> ValidationReport:
 #
 # * Cada arco se cuenta **una vez**; los nodos compartidos no duplican longitud.
 # * **Segmentos compartidos**: en la salida real de ``-upSkl`` varios arcos recorren
-#   el mismo tramo. ``total_length`` (suma de arcos, definición de la tesis) los cuenta
+#   el mismo tramo. ``total_length``  los cuenta
 #   varias veces; ``total_length_unique`` los cuenta una sola vez (ver
 #   ``skeleton_parser.segment_table``).
 # * Los puntos críticos compartidos se reflejan en el **grado** (número de arcos
@@ -1307,7 +1297,7 @@ def build_bridge_table(skel: Skeleton, sigma: float, convention: str = "covarian
                        inertia_resample_step: Optional[float] = None) -> pd.DataFrame:
     """Puentes máximo–silla–máximo (unidad física completa) con sus métricas.
 
-    Vista ALTERNATIVA a la de la tesis (que analiza arcos); se mantiene separada.
+    Vista ALTERNATIVA (que analiza arcos); se mantiene separada.
     """
     br, tab = assemble_bridges(skel)
     m = filament_metrics(br, convention=convention, inertia_resample_step=inertia_resample_step)
@@ -1341,7 +1331,7 @@ def network_summary(skel: Skeleton, table: pd.DataFrame, nodes: pd.DataFrame, si
         "n_critical_points": int(len(nodes)),
         "n_maxima_in_skeleton": int((maxima["degree"] > 0).sum()),
         "n_saddles_in_skeleton": int((saddles["degree"] > 0).sum()),
-        "total_length": total,                       # Σ longitudes de arco (def. de la tesis; cuenta tramos compartidos varias veces)
+        "total_length": total,                       # Σ longitudes de arco 
         "total_length_unique": unique_total,         # longitud geométrica: cada segmento compartido UNA vez
         "overlap_fraction": float(1.0 - unique_total / total) if total > 0 else np.nan,
         "n_components": int(t["component_id"].nunique()) if len(t) else 0,
@@ -1601,7 +1591,7 @@ def plot_distributions(tables: Dict[float, pd.DataFrame], columns: Sequence[str]
 
 def plot_summary_vs_sigma(comparison: pd.DataFrame, stats: Sequence[str] = ("n_arcs", "total_length", "length__median", "curvature_eff__median", "end_to_end__median", "thickness_minor__median"),
                           units: str = "Mpc/h", params: str = ""):
-    """Estadísticos globales vs σ. Círculos = umbrales de la tesis; cuadrados = extensión."""
+    """Estadísticos globales vs σ. Círculos = umbrales de la utilizados; cuadrados = extensión."""
     stats = [s for s in stats if s in comparison.columns]
     n = len(stats)
     cols_n = min(3, n)
@@ -1613,7 +1603,7 @@ def plot_summary_vs_sigma(comparison: pd.DataFrame, stats: Sequence[str] = ("n_a
         d = comparison.sort_values("sigma")
         ax.plot(d["sigma"], d[s], "-", color="0.6", zorder=1)
         th = d["sigma_origin"] == "thesis"
-        ax.scatter(d.loc[th, "sigma"], d.loc[th, s], marker="o", s=45, c="C0", zorder=3, label="umbral de la tesis")
+        ax.scatter(d.loc[th, "sigma"], d.loc[th, s], marker="o", s=45, c="C0", zorder=3, label="umbral utilizado")
         if (~th).any():
             ax.scatter(d.loc[~th, "sigma"], d.loc[~th, s], marker="s", s=28, c="C1", zorder=2, label="extensión")
         ax.set_xlabel("umbral de persistencia σ"); ax.set_ylabel(_label(s.split("__")[0], units) + (" (mediana)" if s.endswith("median") else ""))
@@ -1626,7 +1616,7 @@ def plot_summary_vs_sigma(comparison: pd.DataFrame, stats: Sequence[str] = ("n_a
 
 
 def plot_L_vs_C(tables: Dict[float, pd.DataFrame], units: str = "Mpc/h", params: str = ""):
-    """Curvatura efectiva vs longitud (figura de la tesis), un panel por umbral."""
+    """Curvatura efectiva vs longitud, un panel por umbral."""
     sig = sorted(tables)
     fig, axes = plt.subplots(1, len(sig), figsize=(5.2 * len(sig), 4.6), squeeze=False)
     for ax, s in zip(axes[0], sig):
@@ -1642,7 +1632,7 @@ def plot_L_vs_C(tables: Dict[float, pd.DataFrame], units: str = "Mpc/h", params:
 
 
 def plot_L_geom_vs_tensor(tables: Dict[float, pd.DataFrame], units: str = "Mpc/h", params: str = ""):
-    """Longitud geométrica vs longitud por tensor (comparación de la tesis, sec. 5.5)."""
+    """Longitud geométrica vs longitud por tensor."""
     sig = sorted(tables)
     fig, axes = plt.subplots(1, len(sig), figsize=(5.2 * len(sig), 4.8), squeeze=False)
     for ax, s in zip(axes[0], sig):

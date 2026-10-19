@@ -1969,28 +1969,51 @@ def _nice_length(x: float) -> float:
     return max(m * e for m in (1, 2, 5) if m * e <= x)
 
 
-def projected_density(it: Item, i: int, j: int, nbins: int = 700):
-    """Mapa 2D de longitud de arco por píxel en la proyección (eje i, eje j), con los límites de dibujo del esqueleto.
-    Los tramos compartidos por varios arcos suman una vez por arco. Suavizado gaussiano de 1.2 píxeles."""
-    from scipy.ndimage import gaussian_filter
-    lo, hi = view_limits(it.skel)
+def densified_points(it: Item, step: float):
+    """Puntos equiespaciados (≈`step`) a lo largo de todos los arcos (sin unir arcos distintos) y el peso de longitud de
+    cada uno. Sirve para dibujar la red como una línea continua y para estimar la longitud de filamento por volumen."""
     P, off = it.skel.points, it.skel.offsets
-    wi, wj = hi[i] - lo[i], hi[j] - lo[j]
-    nx = nbins if wi >= wj else max(50, int(round(nbins * wi / wj)))
-    ny = nbins if wj >= wi else max(50, int(round(nbins * wj / wi)))
-    pix = max(wi / nx, wj / ny)
-    # segmentos de cada arco (sin unir arcos distintos), interpolados a ≤ 0.5 píxel para que la línea sea continua
     A, B = P[:-1], P[1:]
     ok = np.ones(len(A), bool)
     ok[off[1:-1] - 1] = False
     A, B = A[ok], B[ok]
     seglen = np.linalg.norm(B - A, axis=1)
-    k = np.maximum(1, np.ceil(seglen / (0.5 * pix)).astype(np.int64))
+    k = np.maximum(1, np.ceil(seglen / step).astype(np.int64))
     seg = np.repeat(np.arange(len(A)), k)
     first = np.cumsum(k) - k
     t = (np.arange(len(seg)) - np.repeat(first, k) + 0.5) / np.repeat(k, k)
-    Q = A[seg] + (B[seg] - A[seg]) * t[:, None]
-    w = (seglen / k)[seg]                                        # cada punto interpolado pesa su tramo de longitud
+    return A[seg] + (B[seg] - A[seg]) * t[:, None], (seglen / k)[seg]
+
+
+def density_at_points(it: Item, n_vox: int = 110, max_points: int = 150000):
+    """Densidad 3D de longitud de arco (suma de arcos; los tramos compartidos cuentan una vez por arco) por voxel, suavizada
+    (gaussiana de 1.2 voxel) y evaluada sobre los puntos de los filamentos. Devuelve (puntos, densidad)."""
+    from scipy.ndimage import gaussian_filter, map_coordinates
+    lo, hi = view_limits(it.skel)
+    size = hi - lo
+    vox = float(size.max()) / n_vox
+    Q, w = densified_points(it, 0.5 * vox)
+    shape = np.maximum(8, np.ceil(size / vox).astype(int))
+    H, _ = np.histogramdd(Q, bins=shape, range=list(zip(lo, hi)), weights=w)
+    H = gaussian_filter(H, 1.2)
+    idx = (Q - lo) / size * shape - 0.5
+    d = map_coordinates(H, idx.T, order=1, mode="nearest")
+    if len(Q) > max_points:
+        keep = np.random.default_rng(0).choice(len(Q), max_points, replace=False)
+        Q, d = Q[keep], d[keep]
+    return Q, d
+
+
+def projected_density(it: Item, i: int, j: int, nbins: int = 700):
+    """Mapa 2D de longitud de arco por píxel en la proyección (eje i, eje j), con los límites de dibujo del esqueleto.
+    Los tramos compartidos por varios arcos suman una vez por arco. Suavizado gaussiano de 1.2 píxeles."""
+    from scipy.ndimage import gaussian_filter
+    lo, hi = view_limits(it.skel)
+    wi, wj = hi[i] - lo[i], hi[j] - lo[j]
+    nx = nbins if wi >= wj else max(50, int(round(nbins * wi / wj)))
+    ny = nbins if wj >= wi else max(50, int(round(nbins * wj / wi)))
+    pix = max(wi / nx, wj / ny)
+    Q, w = densified_points(it, 0.5 * pix)                      # arcos interpolados a ≤ 0.5 píxel: línea continua
     H, _, _ = np.histogram2d(Q[:, i], Q[:, j], bins=[nx, ny], range=[[lo[i], hi[i]], [lo[j], hi[j]]], weights=w)
     return gaussian_filter(H, 1.2), (lo[i], hi[i], lo[j], hi[j])
 
@@ -2016,13 +2039,11 @@ def _density_map_panel(i: int, j: int):
         for sp in ax.spines.values():
             sp.set_color("0.5")
         ax.set_title(f"{letter}{short(it.title)}", color="white", fontsize=10, loc="left")
-        # barra de escala
-        bar = _nice_length(0.15 * (ext[1] - ext[0]))
+        bar = _nice_length(0.15 * (ext[1] - ext[0]))                # barra de escala
         x0, y0 = ext[0] + 0.05 * (ext[1] - ext[0]), ext[2] + 0.06 * (ext[3] - ext[2])
         ax.plot([x0, x0 + bar], [y0, y0], color="white", lw=2.5, solid_capstyle="butt")
-        ax.text(x0 + bar / 2, y0 + 0.012 * (ext[3] - ext[2]), f"{bar:g} {it.units.split('/')[0]}" + ("/h" if "/h" in it.units else ""),
-                color="white", ha="center", va="bottom", fontsize=7)
-        # recuadro con conteos
+        unit = it.units.split("/")[0] + ("/h" if "/h" in it.units else "")
+        ax.text(x0 + bar / 2, y0 + 0.012 * (ext[3] - ext[2]), f"{bar:g} {unit}", color="white", ha="center", va="bottom", fontsize=7)
         t = it.table[~it.table["is_duplicate"]] if "is_duplicate" in it.table else it.table
         box = (f"Puntos    {len(it.skel.points):>9,}\nFilamentos{len(t):>9,}\n"
                f"L mediana {np.nanmedian(t['length']):>9.4g}\nL total   {np.nansum(t['length']):>9.4g}")
@@ -2032,11 +2053,55 @@ def _density_map_panel(i: int, j: int):
     return draw
 
 
+def _density_map_3d_panel():
+    def draw(ax, it: Item, letter: str = ""):
+        Q, d = density_at_points(it)
+        o = d.argsort()
+        pos = d[d > 0]
+        img = np.log1p(d / np.median(pos)) if pos.size else d
+        vmax = np.percentile(img[d > 0], 99.7) if pos.size else 1.0
+        ax.scatter(Q[o, 0], Q[o, 1], Q[o, 2], c=img[o], cmap="inferno", vmin=0, vmax=vmax, s=2.6, alpha=0.8,
+                   linewidths=0, marker=".", depthshade=False, rasterized=True)
+        mx = it.skel.cp[it.skel.cp["type"] == 3]
+        if len(mx):
+            ax.scatter(mx["x"], mx["y"], mx["z"], s=9, c="gold", marker="*", linewidths=0, depthshade=False,
+                       rasterized=True, label="máximos (nodos)")
+            ax.legend(loc="upper right", fontsize=6, facecolor="black", edgecolor="0.4", labelcolor="white")
+        _equal_box(ax, it.skel)
+        ax.view_init(elev=22, azim=-58)
+        ax.set_facecolor("black")
+        for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
+            try:
+                axis.set_pane_color((0, 0, 0, 1))
+                axis._axinfo["grid"]["color"] = (0.35, 0.35, 0.35, 0.5)
+            except Exception:
+                pass
+        ax.set_xlabel(f"X [{it.units}]", color="white"); ax.set_ylabel(f"Y [{it.units}]", color="white")
+        ax.set_zlabel(f"Z [{it.units}]", color="white")
+        ax.tick_params(colors="white", labelsize=7)
+        ax.set_title(f"{letter}{short(it.title)}", color="white", fontsize=10, loc="left")
+        # barra de escala 3D (a lo largo de X, en la esquina inferior)
+        lo, hi = view_limits(it.skel)
+        bar = _nice_length(0.15 * (hi[0] - lo[0]))
+        y0, z0, x0 = lo[1] + 0.02 * (hi[1] - lo[1]), lo[2], lo[0] + 0.04 * (hi[0] - lo[0])
+        ax.plot([x0, x0 + bar], [y0, y0], [z0, z0], color="white", lw=2.5, solid_capstyle="butt")
+        unit = it.units.split("/")[0] + ("/h" if "/h" in it.units else "")
+        ax.text(x0 + bar / 2, y0, z0, f"{bar:g} {unit}", color="white", fontsize=7, ha="center", va="top")
+        t = it.table[~it.table["is_duplicate"]] if "is_duplicate" in it.table else it.table
+        box = (f"Puntos    {len(it.skel.points):>9,}\nFilamentos{len(t):>9,}\n"
+               f"L mediana {np.nanmedian(t['length']):>9.4g}\nL total   {np.nansum(t['length']):>9.4g}")
+        ax.text2D(0.01, 0.93, box, transform=ax.transAxes, ha="left", va="top", fontsize=6.5, family="monospace",
+                  color="white", bbox=dict(facecolor="black", edgecolor="0.5", alpha=0.85, boxstyle="round,pad=0.35"))
+    draw.dark = True
+    return draw
+
+
 PANELS: List[Tuple[str, str, Callable]] = [
     # (nombre de archivo, tipo, función)
-    ("mapa_densidad_xy", "2d", _density_map_panel(0, 1)),
-    ("mapa_densidad_xz", "2d", _density_map_panel(0, 2)),
-    ("mapa_densidad_yz", "2d", _density_map_panel(1, 2)),
+    ("mapa_densidad_3d", "3d", _density_map_3d_panel()),
+    ("mapa_densidad_proyeccion_xy", "2d", _density_map_panel(0, 1)),
+    ("mapa_densidad_proyeccion_xz", "2d", _density_map_panel(0, 2)),
+    ("mapa_densidad_proyeccion_yz", "2d", _density_map_panel(1, 2)),
     ("network3d_lineas", "3d", _lines_panel(None)),
     ("network3d_color_longitud", "3d", _lines_panel("length")),
     ("network3d_puntos", "3d", _points_panel),
@@ -2168,7 +2233,8 @@ Todas las longitudes están en las unidades indicadas en `resumen_red.csv` (colu
 | `total_length_unique` (resumen) | longitud geométrica de la red: cada segmento compartido se cuenta una sola vez |
 | `volume`, `volume_source` | volumen usado para las densidades: región declarada con `--region`, o la caja que envuelve los puntos (cota inferior) |
 | `puentes_<etiqueta>.csv` | unidades máximo–silla–máximo ensambladas a partir de los arcos (vista alternativa a la de arcos) |
-| `mapa_densidad_xy/xz/yz` | longitud de arco por píxel en la proyección (suma de arcos, los tramos compartidos cuentan una vez por arco), interpolada a 0.5 píxel, suavizado gaussiano de 1.2 píxeles, escala log1p/mediana, normalizada por panel; las estrellas son los máximos |
+| `mapa_densidad_proyeccion_xy/xz/yz` | mismo mapa de densidad proyectado sobre un plano (2D): longitud de arco por píxel, arcos interpolados a 0.5 píxel, suavizado gaussiano de 1.2 píxeles, escala log1p/mediana, normalizada por panel |
+| `mapa_densidad_3d` | longitud de arco por voxel (suma de arcos: los tramos compartidos cuentan una vez por arco) evaluada sobre los filamentos interpolados; suavizado gaussiano de 1.2 voxel, escala log1p/mediana, normalizada por panel; las estrellas son los máximos |
 """
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-r"""filaments3d.py — informe de RESULTADOS (solo gráficos y tablas, sin análisis) de filamentos 3D de DisPerSE en UN SOLO ARCHIVO.
+r"""filaments3d.py — (solo gráficos y tablas, sin análisis) de filamentos 3D de DisPerSE en UN SOLO ARCHIVO.
 
 Autosuficiente: solo necesita Python >= 3.10 y numpy, scipy, pandas, matplotlib (en Colab ya están).
 Archivo generado automáticamente por tools/build_single_file.py a partir del paquete de desarrollo.
